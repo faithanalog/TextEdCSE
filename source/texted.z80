@@ -1,0 +1,624 @@
+.nolist
+#include "ti84pcse.inc"
+#include "dcse8.inc"
+.list
+.variablename TEXTED
+
+  .org UserMem
+BinaryStart:
+  .db $DE,$2A,"N",$BB,$B4,$BB,$B4,$BB,$B3,$BB,$C3,")D"   ;Disp "Needs D
+  .db $BB,$BF,$BB,$BF,$BB,$C2,$BB,$C3,")CSE",$2A,$3F   ;oors CSE"
+  .db $EF,$11                      ;OpenLib(
+  .db "D",$BB,$BF,$BB,$BF,$BB,$C2,$BB,$C3,"CSE",$11,$3F  ;(tokenized "DoorsCSE")
+  .db $EF,$12,$3F                    ;ExecLib
+  .db $D5,$3F                      ;Return
+  .db tExtTok,tAsm84CPrgm,$3F              ;Asm84CPrgm
+HeaderStart:
+  .dw ASMStart-HeaderStart    ;offset to code
+  ; Header sections start here
+
+  .dw 10
+  .db ASMHEADER_FIELD_TYPE_LIB  ;== 3
+  .db "DoorsCSE",8,0        ;Lib name, min major version, min minor version
+
+;  .dw endDCSIcon - startDCSIcon
+;  .db ASMHEADER_FIELD_TYPE_ICON
+;startDCSIcon
+;  .db 1 ;1 bit color
+;  .dw E007h ;FG (big endian)
+;  .dw 0000h ;BG
+;  .db 32, 32 ;Size
+;  .incbmp assets/icon.png
+;endDCSIcon
+
+  .dw endDCSDesc - startDCSDesc
+  .db ASMHEADER_FIELD_TYPE_DESC
+startDCSDesc:
+  .db "Text Editor",0
+endDCSDesc:
+
+  .dw endDCSAuthor - startDCSAuthor
+  .db ASMHEADER_FIELD_TYPE_AUTH
+startDCSAuthor:
+  .db "Unknownloner",0
+endDCSAuthor:
+
+  .dw 0
+  .db ASMHEADER_FIELD_TYPE_HALFRES
+
+  .dw 0   ;End of header field: 0 bytes of data
+  .db $ff   ;End of header field: type 255
+ASMStart:
+  .relocate UserMem
+
+;BG_COLOR = 01A8h
+;Solarized dark
+SOL_DARK_BG = 0146h
+SOL_DARK_FG = 84B2h
+
+;Black and white
+MONOCHROME_BG = FFFFh
+MONOCHROME_FG = 0000h
+
+;Similar to looking at a ti83
+83P_BG = 9D51h
+83P_FG = 18E2h
+
+
+DATA_PAGE = 87h
+
+;Width of text area. Max is 26
+BUF_WIDTH = 23
+;Height of text area. Max is 15
+BUF_HEIGHT = 10
+BUF_IS_LARGE = (BUF_WIDTH * BUF_HEIGHT) > 256
+
+dcsePage = plotSScreen
+.varloc 4000h, 4000h
+.var byte, row
+.var byte, col
+.var word, fgColor
+.var word, bgColor
+.var BUF_WIDTH * BUF_HEIGHT, textBuffer
+
+
+ProgramStart:
+  ;Lol who needs interrupts?
+  di
+  in a,(6h)
+  ld (dcsePage),a
+  ld a,DATA_PAGE
+  out (6h),a
+
+  ;Set LCD cursor to increment vertically
+  ld a,03h
+  out (10h),a
+  out (10h),a
+  ld a,%00010000
+  out (11h),a
+  ld a,%00110000
+  out (11h),a
+
+  call ClearBuffer
+
+  ld hl,TestStringCol
+
+  .for _stringDest, 1, 4
+    ld de,textBuffer + (_stringDest * BUF_WIDTH)
+    call CopyStr
+  .loop
+
+  ; This commented could would draw the text in all 3 color schemes
+  ; ld hl,SOL_DARK_BG
+  ; ld (bgColor),hl
+  ; ld hl,SOL_DARK_FG
+  ; ld (fgColor),hl
+  ; call ClearLCD
+  ; call DrawBuffer
+  ;
+  ; ld hl,4500 * 2
+  ; call Delay
+  ;
+  ;
+  ; ld hl,MONOCHROME_BG
+  ; ld (bgColor),hl
+  ; ld hl,MONOCHROME_FG
+  ; ld (fgColor),hl
+  ; call ClearLCD
+  ; call DrawBuffer
+  ;
+  ; ld hl,4500 * 2
+  ; call Delay
+
+  ld hl,83P_BG
+  ld (bgColor),hl
+  ld hl,83P_FG
+  ld (fgColor),hl
+  call ClearLCD
+  call DrawBuffer
+
+  ld hl,4500 * 2
+  call Delay
+
+  ;This makes the text scroll up and down 5 times
+  ld c,5
+
+  _scrollLp:
+    ld b,BUF_HEIGHT - 6
+    _shiftDownRepeat:
+      push bc
+      call ShiftBufferDown
+      call DrawBuffer
+      pop bc
+      djnz _shiftDownRepeat
+
+    ld b,BUF_HEIGHT - 6
+    _shiftUpRepeat:
+      push bc
+      call ShiftBufferUp
+      call DrawBuffer
+      pop bc
+      djnz _shiftUpRepeat
+    dec c
+    jr nz,_scrollLp
+
+  ; Not really sure what this commented code did...
+  ; ld hl,TestString
+  ; ld de,textBuffer
+  ; call CopyStr
+  ;
+  ; push de
+  ; call DrawBuffer
+  ;
+  ; ld hl,4500 * 3
+  ; call Delay
+  ;
+  ; pop de
+  ; ld hl,TestString2
+  ; call CopyStr
+  ; call DrawBuffer
+  ;
+  ; ld hl,4500 * 3
+  ; call Delay
+  ;
+  ; call ShiftBufferDown
+  ; xor a
+  ; call ClearBufferRow
+  ; call DrawBuffer
+  ; ld hl,4500 * 2
+  ; call Delay
+
+  ;Set LCD cursor back to incrementing horizontally
+  ld a,03h
+  out (10h),a
+  out (10h),a
+  ld a,%00010000
+  out (11h),a
+  ld a,%00111000
+  out (11h),a
+
+  ld a,(dcsePage)
+  out (6h),a
+  ld iy, flags
+  ret
+
+TestString:
+.db "This is a test! First we will wait 3 seconds, then draw another.",0
+TestString2:
+.db " This is the other string. Now we will wait 3 more seconds. then shift everything down",0
+TestStringCol:
+.db "Color themes!",0
+.db "First: Solarized Dark",0
+.db "Second: Black and White",0
+.db "Third: 83Plus",0
+TestStringScroll:
+.db "Line 1",0
+.db "Line 2",0
+.db "Line 3",0
+.db "Line 4",0
+.db "Line 5",0
+.db "Line 6",0
+.db "Line 7",0
+.db "Line 8",0
+.db "Line 9",0
+.db "Line 10",0
+.db "Line 11",0
+.db "Line 12",0
+.db "Line 13",0
+
+
+.module textBuf
+;Table of addresses for the starts of each row
+.align 32
+BufferRowAddrTable:
+  .for _rowAddr, 0, BUF_HEIGHT - 1
+    .dw textBuffer + (_rowAddr * BUF_WIDTH)
+  .loop
+
+
+;Clears out the textBuffer
+ClearBuffer:
+  ld hl,textBuffer
+  xor a
+  ld b,(BUF_WIDTH * BUF_HEIGHT) % 256
+  .if (BUF_WIDTH * BUF_HEIGHT) > 256
+    call _clrBufLp
+  .endif
+  _clrBufLp:
+    ld (hl),a
+    inc hl
+    djnz _clrBufLp
+  ret
+
+;Draws the contents of the text shadow
+DrawBuffer:
+  ld a,1
+  ld (autoIncCursor),a
+  xor a
+  ld (row),a
+  ld (col),a
+  call SetCursorPos
+  ld iy,textBuffer
+  ld b,(BUF_WIDTH * BUF_HEIGHT) % 256
+  .if BUF_IS_LARGE
+    call _drawBufLp
+  .endif
+  _drawBufLp:
+    ld a,(iy)
+    inc iy
+    push bc
+    call DrawChar
+    pop bc
+    djnz _drawBufLp
+  ret
+
+
+
+.module textBuf_clearRow
+;Clears a row of chars in the buffer
+;a - row to clear
+ClearBufferRow:
+  or a
+  jr nz,_calcRowOffset  ;Optimize top row
+  ld hl,textBuffer
+  jr _clearRow
+_calcRowOffset:
+
+  ;Calc offset into address table
+  ld de,BufferRowAddrTable
+  add a,a
+  add a,e
+  ld e,a
+
+  ;Load address into hl
+  ld a,(de)
+  ld h,a
+  inc de
+  ld a,(de)
+  ld l,a
+_clearRow:
+  ld b,BUF_WIDTH
+  xor a
+  _clearRowLp:
+    ld (hl),a
+    inc hl
+    djnz _clearRowLp
+  ret
+.endmodule
+
+;Shifts all characters down 1 row, discarding the final row
+;and leaving the first row unchanged
+;Destroys hl,de,a,b
+ShiftBufferDown:
+  ld hl,textBuffer + (BUF_WIDTH * BUF_HEIGHT) - 1 - BUF_WIDTH
+  ld de,textBuffer + (BUF_WIDTH * BUF_HEIGHT) - 1
+  ld b,(BUF_WIDTH * (BUF_HEIGHT - 1)) % 256
+  .if (BUF_WIDTH * (BUF_HEIGHT - 1)) > 256
+    call _shiftDownLp
+  .endif
+  _shiftDownLp:
+    ld a,(hl)
+    ld (de),a
+    dec hl
+    dec de
+    djnz _shiftDownLp
+  ret
+
+ShiftBufferUp:
+  ld hl,textBuffer + BUF_WIDTH
+  ld de,textBuffer
+  ld b,(BUF_WIDTH * (BUF_HEIGHT - 1)) % 256
+  .if (BUF_WIDTH * (BUF_HEIGHT - 1)) > 256
+    call _shiftUpLp
+  .endif
+  _shiftUpLp:
+    ld a,(hl)
+    ld (de),a
+    inc hl
+    inc de
+    djnz _shiftUpLp
+  ret
+
+;Copies a null terminated string from HL to DE
+;After calling:
+;  HL will be positioned after the null char of the string,
+;  DE will be positioned after the last char in the dest.
+;This means you can call multiply CopyStrs in a row and only change one register.
+CopyStr:
+  ld a,(hl)
+  inc hl
+  or a
+  ret z
+  ld (de),a
+  inc de
+  jr CopyStr
+.endmodule
+
+;Sets the cursor position, adjusting LCD as needed
+;Call this after modifying row or col
+;Destroys a,b
+SetCursorPos:
+  call SetLCDRow
+
+;Adjusts lcd col to new cursor col
+;Destroys a,b
+SetLCDCol:
+  ld a,lrCol
+  out (10h),a
+  out (10h),a
+  xor a
+  out (11h),a
+
+  ;A * 6
+  ld a,(col)
+  add a,a
+  ld b,a
+  add a,a
+  add a,b
+  out (11h),a
+  ret
+
+;Adjusts lcd row to new cursor row
+;Destroys a,b
+SetLCDRow:
+  ld a,lrWinTop
+  out (10h),a
+  out (10h),a
+
+  ld a,(row)
+  ;A * 16
+  .repeat 4
+  add a,a
+  .loop
+  out (11h),a
+  out (11h),a
+  ld b,a
+
+  ld a,lrRow
+  out (10h),a
+  out (10h),a
+  xor a
+  out (11h),a
+  ld a,b
+  out (11h),a
+
+  ld a,lrWinBottom
+  out (10h),a
+  out (10h),a
+  ld a,13
+  add a,b
+  out (11h),a
+  out (11h),a
+  ret
+
+.module drawChar
+;Draw a null terminated string at the current row/col. Has line wrapping
+;Input: IY - string
+;Destroys all including IY
+DrawString:
+  ld a,1
+  ld (autoIncCursor),a
+
+_drawStringLp:
+  ld a,(iy)
+  or a
+  ret z
+  call DrawChar
+  inc iy
+  jr _drawStringLp
+
+;Draw a character at the current row/col. Auto line wrap
+;A - character code
+;Destroys all but IY
+.var byte, autoIncCursor
+.var byte, charColCounter
+
+DrawChar:
+  ld b,a
+  ld c,11h
+
+  ld a,lrGram
+  out (10h),a
+  out (10h),a
+  ld a,b
+  or a
+  jp z,_drawBlankChar
+  cp ' '
+  jp z,_drawBlankChar
+  ; jr nz,_drawTheChar
+  ; cp ' '
+  ; jr nz,_drawTheChar
+  ; ld a,F0h
+
+  ; _drawTheChar:
+
+  ;HL = (A - 1) * 5
+  dec a
+  ld h,0
+  ld l,a
+  add hl,hl
+  add hl,hl
+  add a,l
+  jr nc,$+3
+  inc h
+  ld l,a
+
+  ld de,FONT_DAT
+  add hl,de
+  push hl
+  pop ix
+
+  ld hl,(fgColor)
+  ld de,(bgColor)
+
+  ld a,5
+  ld (charColCounter),a
+
+_drawCharCol:
+  ld a,(ix)
+  rla
+  ld b,7
+  _drawCharRow:
+    rla
+    jr nc,_drawCharRowBG
+    _drawCharRowFG:
+      out (c),h
+      out (c),l
+      out (c),h
+      out (c),l
+      djnz _drawCharRow
+      jr _drawCharRowDone
+    _drawCharRowBG:
+      out (c),d
+      out (c),e
+      out (c),d
+      out (c),e
+      djnz _drawCharRow
+    _drawCharRowDone
+  inc ix
+  ld a,(charColCounter)
+  dec a
+  ld (charColCounter),a
+  jr nz,_drawCharCol
+
+  ld b,7
+  jr _drawBlankPixels
+_drawBlankChar:
+  ld b,6*7
+  ; call _incCursorPos
+  ; call SetLCDCol
+  ; ret
+_drawBlankPixels:
+  ld hl,(bgColor)
+  ld a,h
+  _fillBlankChar:
+    out (11h),a
+    out (c),l
+    out (11h),a
+    out (c),l
+    djnz _fillBlankChar
+
+_incCursorPos:
+  ld a,(autoIncCursor)
+  or a
+  ret z
+  ld a,(col)
+  inc a
+  ld (col),a
+  cp BUF_WIDTH
+  ret nz
+  xor a
+  ld (col),a
+  ld a,(row)
+  inc a
+  cp BUF_HEIGHT
+  jr nz,$+3
+  xor a
+  ld (row),a
+  call SetCursorPos
+  ret
+.endmodule
+
+;Clears the left half of the LCD to the background color
+;destroys a,hl,bc
+.module clearLCD
+ClearLCD:
+  ld a,lrRow
+  out (10h),a
+  out (10h),a
+  xor a
+  out (11h),a
+  out (11h),a
+
+  ld a,lrCol
+  out (10h),a
+  out (10h),a
+  xor a
+  out (11h),a
+  out (11h),a
+
+  ld a,lrWinLeft
+  out (10h),a
+  out (10h),a
+  xor a
+  out (11h),a
+  out (11h),a
+
+  ld a,lrWinTop
+  out (10h),a
+  out (10h),a
+  xor a
+  out (11h),a
+  out (11h),a
+
+  ld a,lrWinRight
+  out (10h),a
+  out (10h),a
+  xor a
+  out (11h),a
+  ld a,159
+  out (11h),a
+
+  ld a,lrWinBottom
+  out (10h),a
+  out (10h),a
+  xor a
+  out (11h),a
+  ld a,239
+  out (11h),a
+
+  ld a,lrGram
+  out (10h),a
+  out (10h),a
+
+  ld hl,(bgColor)
+  ld a,h
+  ld c,11h;
+
+  ld b,0
+
+  ld h,150
+  _clearLp:
+    _clearSubLp:
+      out (11h),a
+      out (c),l
+      djnz _clearSubLp
+  dec h
+  jr nz,_clearLp
+  ret
+.endmodule
+
+;4500 is aprox 1 second
+;HL - input
+;destroys hl, a, b
+Delay:
+  djnz Delay
+  dec hl
+  ld a,h
+  or l
+  jr nz,Delay
+  ret
+
+
+FONT_DAT:
+.incbin assets/83pfont.bin
